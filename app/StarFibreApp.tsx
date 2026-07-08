@@ -2,8 +2,6 @@
 
 import Image from 'next/image'
 import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '@/lib/supabase'
-import type { Session } from '@supabase/supabase-js'
 
 type CompanyProfile = { company_name: string; tagline: string; hero_title: string; hero_summary: string; about_title: string; about_body: string; mission: string; vision: string }
 type SortableContent = { id: string; sort_order?: number; title: string; body?: string; speed?: string; description?: string }
@@ -15,7 +13,8 @@ type Invoice = { id: string; customer_id: string; billing_month: string; due_dat
 type Payment = { id: string; customer_id: string; invoice_id?: string; source: string; amount: number; paid_at: string; verification_status: string; proof_url?: string }
 type Settings = { yellow_days: number; orange_days: number; red_days: number; disconnection_days: number; disconnection_months: number; notification_template?: string }
 type Ticket = { id: string; customer_id?: string; subject: string; status: string }
-type AdminOverviewData = Pick<DatabaseState, 'customers' | 'invoices' | 'payments' | 'settings' | 'tickets'>
+type AuditEvent = { id: string; action: string; target_table: string; created_at: string }
+type ManagerOverview = { activeCustomers: number; collectedThisPage: number; totalOutstandingThisPage: number; openTickets: number; pendingReconciliation: number }
 
 type DatabaseState = {
   company: CompanyProfile | null
@@ -30,9 +29,11 @@ type DatabaseState = {
   payments: Payment[]
   settings: Settings | null
   tickets: Ticket[]
+  auditTrail: AuditEvent[]
+  managerOverview: ManagerOverview | null
 }
 
-const emptyState: DatabaseState = { company: null, benefits: [], values: [], offerings: [], testimonials: [], contacts: [], plans: [], customers: [], invoices: [], payments: [], settings: null, tickets: [] }
+const emptyState: DatabaseState = { company: null, benefits: [], values: [], offerings: [], testimonials: [], contacts: [], plans: [], customers: [], invoices: [], payments: [], settings: null, tickets: [], auditTrail: [], managerOverview: null }
 const money = (amount: number) => `R${Number(amount || 0).toLocaleString('en-ZA')}`
 const latestUnpaidInvoice = (invoices: Invoice[]) => invoices.find((invoice) => invoice.status !== 'paid')
 
@@ -91,11 +92,10 @@ function allocatePayment(invoices: Invoice[], amount: number) {
     })
 }
 
-async function selectTable<T>(table: string, orderColumn?: string) {
-  const query = supabase.from(table).select('*')
-  const { data, error } = orderColumn ? await query.order(orderColumn) : await query
-  if (error) throw error
-  return (data ?? []) as T[]
+async function fetchDashboardData(page = 1) {
+  const response = await fetch(`/api/dashboard?page=${page}&pageSize=25`, { cache: 'no-store' })
+  if (!response.ok) throw new Error('Unable to load account information.')
+  return response.json() as Promise<DatabaseState>
 }
 
 function AdminManagerOverview({ plans }: { plans: Plan[] }) {
@@ -203,17 +203,7 @@ export default function StarFibreApp() {
       setLoading(true)
       setError(null)
       try {
-        const [companyRows, benefits, values, offerings, testimonials, contacts, plans] = await Promise.all([
-          selectTable<CompanyProfile>('company_profile'),
-          selectTable<SortableContent>('benefits', 'sort_order'),
-          selectTable<SortableContent>('value_propositions', 'sort_order'),
-          selectTable<SortableContent>('offerings', 'sort_order'),
-          selectTable<Testimonial>('testimonials'),
-          selectTable<Contact>('contact_channels', 'sort_order'),
-          selectTable<Plan>('subscription_plans'),
-        ])
-
-        setData({ ...emptyState, company: companyRows[0] ?? null, benefits, values, offerings, testimonials, contacts, plans })
+        setData(await fetchDashboardData())
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : 'Unable to load account information.')
       } finally {
@@ -234,8 +224,8 @@ export default function StarFibreApp() {
   const paymentPreview = useMemo(() => allocatePayment(customerInvoices, 500), [customerInvoices])
   const balance = customerInvoices.reduce((sum, invoice) => sum + Number(invoice.amount) - Number(invoice.paid_amount), 0)
   const arrears = customerInvoices.filter((invoice) => invoice.status !== 'paid').length
-  const collectedThisMonth = data.payments.filter((payment) => payment.verification_status === 'approved').reduce((sum, payment) => sum + Number(payment.amount), 0)
-  const totalOutstanding = data.invoices.reduce((sum, invoice) => sum + Number(invoice.amount) - Number(invoice.paid_amount), 0)
+  const collectedThisMonth = data.managerOverview?.collectedThisPage ?? data.payments.filter((payment) => payment.verification_status === 'approved').reduce((sum, payment) => sum + Number(payment.amount), 0)
+  const totalOutstanding = data.managerOverview?.totalOutstandingThisPage ?? data.invoices.reduce((sum, invoice) => sum + Number(invoice.amount) - Number(invoice.paid_amount), 0)
   const unpaidInvoice = latestUnpaidInvoice(customerInvoices)
 
   if (loading) return <PageSkeleton />
@@ -289,7 +279,12 @@ export default function StarFibreApp() {
           {selectedCustomer ? <><div className="grid four"><article className="card stat primary-stat"><span>Current balance</span><strong>{money(balance)}</strong><small>{arrears ? `${arrears} unpaid month${arrears > 1 ? 's' : ''}` : 'Account is current'}</small></article><article className="card stat"><span>Next action</span><strong>{unpaidInvoice?.due_date ?? 'All paid'}</strong><small>{unpaidInvoice ? 'Oldest unpaid month is prioritised.' : 'No payment required today.'}</small></article><article className="card stat"><span>Current plan</span><strong>{selectedPlan?.speed ?? 'No plan'}</strong><small>{selectedPlan?.name} · {money(Number(selectedPlan?.monthly_price ?? 0))}/month</small></article><article className="card stat"><span>Account</span><strong>{selectedCustomer.account_number}</strong><small>{selectedCustomer.street}, Protea Glen {selectedCustomer.extension}</small></article></div><div className="split"><article className="card"><h3>Billing history</h3><div className="table-wrap"><table><thead><tr><th>Month</th><th>Due</th><th>Amount</th><th>Paid date</th><th>Status</th></tr></thead><tbody>{customerInvoices.map((invoice) => <tr key={invoice.id}><td>{invoice.billing_month}</td><td>{invoice.due_date}</td><td>{money(Number(invoice.amount))}</td><td>{invoice.paid_date ?? '—'}</td><td><StatusPill status={invoice.status} /></td></tr>)}</tbody></table></div><button className="ghost">Download statement</button></article><article className="card actions"><h3>Pay or upload proof</h3><label>Payment amount<input type="number" defaultValue={500} /></label><button>Pay now</button><button className="secondary">Upload EFT proof</button><p className="note">Payments are allocated from the oldest unpaid invoice first.</p><ul>{paymentPreview.slice(0, 3).map((invoice) => <li key={invoice.id}>{invoice.billing_month}: {money(Number(invoice.paid_amount))} / {money(Number(invoice.amount))} · {invoice.status.replace('_', ' ')}</li>)}</ul></article></div></> : <div className="card empty-card"><h3>Customer portal coming online</h3><p>Once an account is selected, customers will see balances, statements and payment actions here.</p></div>}
         </section>
 
-        <AdminManagerOverview plans={data.plans} />
+        <section id="admin" className="portal-section admin-portal">
+          <div className="section-head"><p>Manager overview</p><h2>Operational data is condensed into the decisions teams need most.</h2></div>
+          <div className="grid four"><article className="card stat"><span>Active customers</span><strong>{data.managerOverview?.activeCustomers ?? data.customers.filter((item) => item.status === 'active').length}</strong></article><article className="card stat"><span>Collected this month</span><strong>{money(collectedThisMonth)}</strong></article><article className="card stat"><span>Outstanding balance</span><strong>{money(totalOutstanding)}</strong></article><article className="card stat"><span>Open tickets</span><strong>{data.managerOverview?.openTickets ?? data.tickets.length}</strong></article></div>
+          <div className="split"><article className="card"><h3>Customer aging</h3><div className="table-wrap"><table><thead><tr><th>Customer</th><th>Plan</th><th>Status</th><th>SLA</th><th>Balance</th></tr></thead><tbody>{data.customers.slice(0, 6).map((item, index) => { const ledger = data.invoices.filter((invoice) => invoice.customer_id === item.id); const customerBalance = ledger.reduce((sum, invoice) => sum + Number(invoice.amount) - Number(invoice.paid_amount), 0); const days = [31, 0, 62][index] ?? 0; return <tr key={item.id}><td>{item.name}</td><td>{data.plans.find((entry) => entry.id === item.plan_id)?.speed}</td><td><StatusPill status={item.status} /></td><td><span className={`aging ${agingClass(days, data.settings)}`}>{days ? `${days}d overdue` : 'current'}</span></td><td>{money(customerBalance)}</td></tr> })}</tbody></table></div><div className="bulk"><button className="secondary">Send reminders</button><button className="danger">Review disconnections</button></div></article><aside className="card"><h3>Proof-of-payment queue</h3>{data.payments.filter((payment) => payment.verification_status === 'pending_verification').slice(0, 3).map((payment) => <div className="queue" key={payment.id}><div><strong>{data.customers.find((item) => item.id === payment.customer_id)?.name}</strong><p>{money(Number(payment.amount))} paid {payment.paid_at}</p></div><button>Approve</button><button className="ghost">Reject</button></div>)}<h3 id="settings">Thresholds</h3><p>Yellow {data.settings?.yellow_days ?? 2}d, orange {data.settings?.orange_days ?? 4}d, red {data.settings?.red_days ?? 5}d, disconnection {data.settings?.disconnection_days ?? 14}d.</p></aside></div>
+          <div className="split observability-grid"><article className="card"><h3>Launch observability</h3><ul><li>Uptime: <code>/api/observability/health</code></li><li>Error tracking: server route errors are logged with stable event names.</li><li>Payment reconciliation: {data.managerOverview?.pendingReconciliation ?? 0} pending payment proof(s).</li></ul></article><article className="card"><h3>Admin audit dashboard</h3>{data.auditTrail.length ? data.auditTrail.map((event) => <div className="queue" key={event.id}><div><strong>{event.action}</strong><p>{event.target_table} · {event.created_at}</p></div></div>) : <p>No admin actions recorded in this page.</p>}</article></div>
+        </section>
       </main>
       <footer>{company.company_name} · © 2026</footer>
     </>

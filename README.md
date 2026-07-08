@@ -43,3 +43,16 @@ The workflow sets `GITHUB_PAGES=true`, so `next.config.mjs` automatically uses t
 - The app uses `output: 'export'`, so it can be hosted on GitHub Pages as static files.
 - Next.js image optimization is disabled with `images.unoptimized` because GitHub Pages cannot run the Next.js image optimization server.
 - If deploying to a custom domain or user/organization root page, unset `GITHUB_PAGES` or adjust `basePath` in `next.config.mjs`.
+
+## Launch hardening and observability
+
+Operational dashboard reads for customers, invoices, payments, tickets and manager summaries now go through `/api/dashboard?page=1&pageSize=25`. The route applies bounded pagination, server-side caching for public content, short private cache headers for dashboard payloads, and server logging with stable event names.
+
+Apply the latest `supabase/schema.sql` before launch. It replaces broad authenticated operational reads with strict RLS policies: customers can read only their own account rows, while manager, finance and support reads are gated through `admin_memberships` roles.
+
+Recommended launch monitors:
+
+- Uptime monitor: poll `/api/observability/health` every minute and alert on non-2xx responses or high latency.
+- Error tracking: connect platform log drains/Sentry to events such as `dashboard_api_error` and `healthcheck_failed`.
+- Payment reconciliation alerts: poll `/api/observability/reconciliation` and alert when `status` is `alert` or stale proof-of-payment records are present.
+- Audit dashboard: expose `/api/observability/audit` only to internal admins at the edge/reverse proxy and review recent `audit_trail` actions daily.

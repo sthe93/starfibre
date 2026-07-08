@@ -248,113 +248,67 @@ insert into settings (id, notification_template) values
 (1, 'Your Star Fibre account has an overdue balance. Payments are allocated to your oldest unpaid invoice first.')
 on conflict (id) do nothing;
 
-do $$
-begin
-  create type app_role as enum ('customer','admin');
-exception
-  when duplicate_object then null;
-end
+-- Launch hardening: least-privilege roles and strict RLS for operational data.
+create table if not exists admin_memberships (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  role text not null check (role in ('admin','manager','finance','support')),
+  created_at timestamptz default now()
+);
+
+alter table admin_memberships enable row level security;
+
+create or replace function is_admin_member(required_roles text[] default array['admin','manager'])
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from admin_memberships
+    where user_id = auth.uid()
+      and role = any(required_roles)
+  );
 $$;
 
-create table if not exists user_profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  role app_role not null default 'customer',
-  display_name text not null,
-  customer_id uuid references customers(id),
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
+create or replace function owns_customer_record(customer_record_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from customers
+    where id = customer_record_id
+      and auth_user_id = auth.uid()
+  );
+$$;
 
-alter table user_profiles enable row level security;
-
-create policy "Users can read own profile" on user_profiles for select to authenticated using (auth.uid() = id);
-create policy "Admins can read all profiles" on user_profiles for select to authenticated using (
-  exists (select 1 from user_profiles profile where profile.id = auth.uid() and profile.role = 'admin')
-);
-
-insert into subscription_plans (id, name, speed, monthly_price, description) values
-('11111111-1111-4111-8111-111111111111', 'Home Essential', '25/25 Mbps', 399.00, 'Premium entry fibre for learning, streaming and messaging.'),
-('22222222-2222-4222-8222-222222222222', 'Home Plus', '50/50 Mbps', 599.00, 'Balanced symmetrical fibre for busy homes and hybrid work.'),
-('33333333-3333-4333-8333-333333333333', 'Business Max', '100/100 Mbps', 899.00, 'High-capacity service for power users and small businesses.')
-on conflict (id) do update set name = excluded.name, speed = excluded.speed, monthly_price = excluded.monthly_price, description = excluded.description;
-
-insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data)
-values
-('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admin@starfibrecom.co.za', crypt('StarAdmin#2026', gen_salt('bf')), now(), now(), now(), '{"provider":"email","providers":["email"]}', '{"name":"Star Fibre Admin"}'),
-('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'customer@starfibrecom.co.za', crypt('StarCustomer#2026', gen_salt('bf')), now(), now(), now(), '{"provider":"email","providers":["email"]}', '{"name":"Test Customer"}')
-on conflict (id) do update set email = excluded.email, encrypted_password = excluded.encrypted_password, updated_at = now();
-
-insert into customers (id, auth_user_id, name, contact_number, email, street, extension, account_number, plan_id, installation_date, status)
-values
-('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'Test Customer', '0781722024', 'customer@starfibrecom.co.za', '21607 Kei Street', 'Ext.29', 'SF-TEST-0001', '22222222-2222-4222-8222-222222222222', (current_date - interval '30 days')::date, 'active')
-on conflict (account_number) do update set auth_user_id = excluded.auth_user_id, name = excluded.name, email = excluded.email, plan_id = excluded.plan_id, status = excluded.status;
-
-insert into user_profiles (id, role, display_name, customer_id) values
-('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'admin', 'Star Fibre Admin', null),
-('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'customer', 'Test Customer', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc')
-on conflict (id) do update set role = excluded.role, display_name = excluded.display_name, customer_id = excluded.customer_id, updated_at = now();
-
-insert into invoices (customer_id, billing_month, due_date, amount, paid_amount, status, paid_date) values
-('cccccccc-cccc-4ccc-8ccc-cccccccccccc', (date_trunc('month', current_date)::date - interval '1 month')::date, ((date_trunc('month', current_date)::date + interval '6 days')::date - interval '1 month')::date, 599.00, 599.00, 'paid', (current_date - interval '20 days')::date),
-('cccccccc-cccc-4ccc-8ccc-cccccccccccc', date_trunc('month', current_date)::date, (date_trunc('month', current_date)::date + interval '6 days')::date, 599.00, 0.00, 'unpaid', null)
-on conflict (customer_id,billing_month) do update set amount = excluded.amount, paid_amount = excluded.paid_amount, status = excluded.status, paid_date = excluded.paid_date;
-
-insert into payments (customer_id, source, amount, paid_at, verification_status)
-values ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'manual_eft', 599.00, (current_date - interval '20 days')::date, 'approved')
-on conflict do nothing;
-
-insert into tickets (customer_id, subject, status)
-values ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'Installation quality check', 'open')
-on conflict do nothing;
-
--- Replace demo-wide operational reads with role-aware RLS for launch readiness.
 drop policy if exists "Authenticated read customers" on customers;
 drop policy if exists "Authenticated read invoices" on invoices;
 drop policy if exists "Authenticated read payments" on payments;
 drop policy if exists "Authenticated read settings" on settings;
 drop policy if exists "Authenticated read tickets" on tickets;
 drop policy if exists "Authenticated read audit" on audit_trail;
-drop policy if exists "Customers read own customer record" on customers;
-drop policy if exists "Admins read all customers" on customers;
-drop policy if exists "Customers read own invoices" on invoices;
-drop policy if exists "Admins read all invoices" on invoices;
-drop policy if exists "Customers read own payments" on payments;
-drop policy if exists "Admins read all payments" on payments;
-drop policy if exists "Admins read settings" on settings;
-drop policy if exists "Customers read own tickets" on tickets;
-drop policy if exists "Admins read all tickets" on tickets;
-drop policy if exists "Admins read audit trail" on audit_trail;
 
-create policy "Customers read own customer record" on customers for select to authenticated using (auth_user_id = auth.uid());
-create policy "Admins read all customers" on customers for select to authenticated using (
-  exists (select 1 from user_profiles profile where profile.id = auth.uid() and profile.role = 'admin')
-);
+create policy "Customers read own profile" on customers for select to authenticated using (auth_user_id = auth.uid());
+create policy "Managers read customers" on customers for select to authenticated using (is_admin_member(array['admin','manager','support','finance']));
 
-create policy "Customers read own invoices" on invoices for select to authenticated using (
-  exists (select 1 from customers customer where customer.id = invoices.customer_id and customer.auth_user_id = auth.uid())
-);
-create policy "Admins read all invoices" on invoices for select to authenticated using (
-  exists (select 1 from user_profiles profile where profile.id = auth.uid() and profile.role = 'admin')
-);
+create policy "Customers read own invoices" on invoices for select to authenticated using (owns_customer_record(customer_id));
+create policy "Managers read invoices" on invoices for select to authenticated using (is_admin_member(array['admin','manager','finance','support']));
 
-create policy "Customers read own payments" on payments for select to authenticated using (
-  exists (select 1 from customers customer where customer.id = payments.customer_id and customer.auth_user_id = auth.uid())
-);
-create policy "Admins read all payments" on payments for select to authenticated using (
-  exists (select 1 from user_profiles profile where profile.id = auth.uid() and profile.role = 'admin')
-);
+create policy "Customers read own payments" on payments for select to authenticated using (owns_customer_record(customer_id));
+create policy "Finance reads payments" on payments for select to authenticated using (is_admin_member(array['admin','manager','finance']));
 
-create policy "Admins read settings" on settings for select to authenticated using (
-  exists (select 1 from user_profiles profile where profile.id = auth.uid() and profile.role = 'admin')
-);
+create policy "Managers read settings" on settings for select to authenticated using (is_admin_member(array['admin','manager','finance','support']));
+create policy "Customers read own tickets" on tickets for select to authenticated using (customer_id is not null and owns_customer_record(customer_id));
+create policy "Support reads tickets" on tickets for select to authenticated using (is_admin_member(array['admin','manager','support']));
+create policy "Admins read audit trail" on audit_trail for select to authenticated using (is_admin_member(array['admin','manager']));
+create policy "Admins read memberships" on admin_memberships for select to authenticated using (is_admin_member(array['admin']));
 
-create policy "Customers read own tickets" on tickets for select to authenticated using (
-  exists (select 1 from customers customer where customer.id = tickets.customer_id and customer.auth_user_id = auth.uid())
-);
-create policy "Admins read all tickets" on tickets for select to authenticated using (
-  exists (select 1 from user_profiles profile where profile.id = auth.uid() and profile.role = 'admin')
-);
-
-create policy "Admins read audit trail" on audit_trail for select to authenticated using (
-  exists (select 1 from user_profiles profile where profile.id = auth.uid() and profile.role = 'admin')
-);
+create index if not exists customers_auth_user_id_idx on customers(auth_user_id);
+create index if not exists invoices_customer_billing_idx on invoices(customer_id, billing_month desc);
+create index if not exists payments_customer_paid_at_idx on payments(customer_id, paid_at desc);
+create index if not exists payments_verification_status_idx on payments(verification_status);
+create index if not exists audit_trail_created_at_idx on audit_trail(created_at desc);
