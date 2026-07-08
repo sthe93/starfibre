@@ -1,9 +1,20 @@
 {
   "scripts": {
-    "dev": "python3 -m http.server 5173",
-    "build": "test -f src/styles.css && node --check src/main.js && node --check src/supabaseClient.js",
-    "preview": "python3 -m http.server 4173"
+    "dev": "next dev -H 0.0.0.0",
+    "build": "next build",
+    "start": "next start -H 0.0.0.0",
+    "lint": "next lint"
   },
-  "dependencies": {},
-  "devDependencies": {}
+  "dependencies": {
+    "@supabase/supabase-js": "latest",
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "typescript": "latest"
+  }
 }
