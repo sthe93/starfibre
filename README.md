@@ -56,3 +56,23 @@ Recommended launch monitors:
 - Error tracking: connect platform log drains/Sentry to events such as `dashboard_api_error` and `healthcheck_failed`.
 - Payment reconciliation alerts: poll `/api/observability/reconciliation` and alert when `status` is `alert` or stale proof-of-payment records are present.
 - Audit dashboard: expose `/api/observability/audit` only to internal admins at the edge/reverse proxy and review recent `audit_trail` actions daily.
+
+## Scale readiness
+
+- Image delivery uses Next.js image optimization with AVIF/WebP formats, long immutable cache headers, and optional CDN asset routing through `NEXT_PUBLIC_IMAGE_CDN_HOST`. GitHub Pages exports still disable image optimization because static hosting cannot run the optimizer.
+- High-cardinality billing fields now have dedicated indexes for invoice month/status, unpaid due dates, customer billing lookups, payment reconciliation state, account numbers and customer status/plan filters.
+- Background work is available through protected job endpoints:
+  - `POST /api/jobs/reminders` queues overdue invoice reminders in `reminder_queue`.
+  - `POST /api/jobs/payment-allocation` runs oldest-first allocation for approved payments in batches.
+- Set `JOB_SECRET` in production and call job endpoints with `Authorization: Bearer <JOB_SECRET>` from a scheduler such as Vercel Cron, Supabase scheduled functions or a platform worker. The SQL file also includes commented `pg_cron` schedules for Supabase projects that enable the extension.
+
+## Visual and accessibility quality gates
+
+Run these checks before brand-affecting changes:
+
+```bash
+npm run test:visual
+npm run test:a11y
+```
+
+`test:visual` captures the full premium homepage in Chromium and stores/compares Playwright screenshots. `test:a11y` runs Axe WCAG checks and fails on critical accessibility violations.

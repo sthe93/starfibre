@@ -312,3 +312,148 @@ create index if not exists invoices_customer_billing_idx on invoices(customer_id
 create index if not exists payments_customer_paid_at_idx on payments(customer_id, paid_at desc);
 create index if not exists payments_verification_status_idx on payments(verification_status);
 create index if not exists audit_trail_created_at_idx on audit_trail(created_at desc);
+
+-- Scale indexes for high-cardinality billing and reconciliation fields.
+create index if not exists invoices_billing_month_status_idx on invoices(billing_month desc, status);
+create index if not exists invoices_due_date_unpaid_idx on invoices(due_date, customer_id) where status <> 'paid';
+create index if not exists invoices_customer_status_due_idx on invoices(customer_id, status, due_date);
+create index if not exists payments_paid_at_status_idx on payments(paid_at desc, verification_status);
+create index if not exists payments_invoice_status_idx on payments(invoice_id, verification_status) where invoice_id is not null;
+create index if not exists customers_account_number_idx on customers(account_number);
+create index if not exists customers_status_plan_idx on customers(status, plan_id);
+
+create table if not exists reminder_queue (
+  id uuid primary key default gen_random_uuid(),
+  customer_id uuid references customers(id) not null,
+  invoice_id uuid references invoices(id) not null,
+  channel text not null default 'email',
+  status text not null default 'queued' check (status in ('queued','sent','failed','suppressed')),
+  scheduled_for timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  unique(invoice_id, channel, status)
+);
+
+alter table reminder_queue enable row level security;
+create policy "Support reads reminder queue" on reminder_queue for select to authenticated using (is_admin_member(array['admin','manager','support','finance']));
+create index if not exists reminder_queue_status_schedule_idx on reminder_queue(status, scheduled_for);
+create index if not exists reminder_queue_customer_idx on reminder_queue(customer_id, created_at desc);
+
+create or replace function queue_overdue_reminders(p_limit int default 1000)
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  queued_count int;
+begin
+  with overdue as (
+    select i.id invoice_id, i.customer_id
+    from invoices i
+    where i.status <> 'paid'
+      and i.due_date < current_date
+      and not exists (
+        select 1 from reminder_queue rq
+        where rq.invoice_id = i.id
+          and rq.status in ('queued','sent')
+          and rq.created_at > now() - interval '7 days'
+      )
+    order by i.due_date asc
+    limit greatest(1, p_limit)
+  ), inserted as (
+    insert into reminder_queue (invoice_id, customer_id)
+    select invoice_id, customer_id from overdue
+    on conflict do nothing
+    returning 1
+  )
+  select count(*) into queued_count from inserted;
+
+  return queued_count;
+end;
+$$;
+
+
+alter table payments add column if not exists allocated_at timestamptz;
+create index if not exists payments_allocation_queue_idx on payments(verification_status, paid_at) where allocated_at is null;
+
+create or replace function allocate_payment_oldest_first(p_customer_id uuid, p_payment_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  remaining numeric(10,2);
+  invoice_record record;
+  applied numeric(10,2);
+begin
+  select amount into remaining
+  from payments
+  where id = p_payment_id
+    and customer_id = p_customer_id
+    and allocated_at is null
+  for update;
+
+  if remaining is null then
+    return;
+  end if;
+
+  for invoice_record in
+    select * from invoices
+    where customer_id = p_customer_id and status <> 'paid'
+    order by billing_month asc
+    for update
+  loop
+    exit when remaining <= 0;
+    applied := least(invoice_record.amount - invoice_record.paid_amount, remaining);
+    remaining := remaining - applied;
+
+    update invoices
+    set paid_amount = paid_amount + applied,
+        status = case when paid_amount + applied >= amount then 'paid'::invoice_status else 'partially_paid'::invoice_status end,
+        paid_date = case when paid_amount + applied >= amount then current_date else paid_date end
+    where id = invoice_record.id;
+  end loop;
+
+  update payments
+  set verification_status = 'approved',
+      allocated_at = now()
+  where id = p_payment_id;
+end;
+$$;
+
+create or replace function allocate_approved_payments_batch(p_limit int default 500)
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  payment_record record;
+  processed_count int := 0;
+begin
+  for payment_record in
+    select p.id, p.customer_id
+    from payments p
+    where p.verification_status = 'approved'
+      and p.allocated_at is null
+      and exists (
+        select 1 from invoices i
+        where i.customer_id = p.customer_id
+          and i.status <> 'paid'
+      )
+    order by p.paid_at asc
+    limit greatest(1, p_limit)
+    for update skip locked
+  loop
+    perform allocate_payment_oldest_first(payment_record.customer_id, payment_record.id);
+    processed_count := processed_count + 1;
+  end loop;
+
+  return processed_count;
+end;
+$$;
+
+-- Optional Supabase pg_cron scheduling; enable pg_cron first if available in your project.
+-- select cron.schedule('starfibre-overdue-reminders', '*/15 * * * *', $$select queue_overdue_reminders(1000);$$);
+-- select cron.schedule('starfibre-payment-allocation', '*/5 * * * *', $$select allocate_approved_payments_batch(500);$$);
