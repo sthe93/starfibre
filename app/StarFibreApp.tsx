@@ -32,6 +32,36 @@ type DatabaseState = {
 
 const emptyState: DatabaseState = { company: null, benefits: [], values: [], offerings: [], testimonials: [], contacts: [], plans: [], customers: [], invoices: [], payments: [], settings: null, tickets: [] }
 const money = (amount: number) => `R${Number(amount || 0).toLocaleString('en-ZA')}`
+const latestUnpaidInvoice = (invoices: Invoice[]) => invoices.find((invoice) => invoice.status !== 'paid')
+
+const fallbackCompany: CompanyProfile = {
+  company_name: 'Star Fibre',
+  tagline: 'Fast, fair internet for Protea Glen',
+  hero_title: 'Reliable fibre that keeps homes and businesses connected.',
+  hero_summary: 'Simple packages, clear billing and responsive local support — designed around the way customers actually use the internet.',
+  about_title: 'Local connectivity with a human support team',
+  about_body: 'Star Fibre helps Protea Glen residents and small businesses get online quickly with dependable broadband and transparent account management.',
+  mission: 'Our mission is to make fast internet accessible, easy to understand and simple to pay for.',
+  vision: 'Our vision is a connected community where every customer can learn, work and stream without friction.',
+}
+
+const fallbackBenefits: SortableContent[] = [
+  { id: 'speed', title: 'Fast installs', body: 'Clear activation steps and helpful updates from sign-up to first connection.' },
+  { id: 'billing', title: 'Transparent billing', body: 'Customers can quickly see balances, paid months and the next action required.' },
+  { id: 'support', title: 'Local support', body: 'Friendly help for payments, disputes and service questions.' },
+]
+
+const fallbackValues: SortableContent[] = [
+  { id: 'simple', title: 'Keep it simple', body: 'We reduce clutter so customers can find plans, contact details and account actions fast.' },
+  { id: 'fair', title: 'Fair packages', body: 'Straightforward speed options with pricing that is easy to compare.' },
+  { id: 'ready', title: 'Built to grow', body: 'Account and billing workflows are ready for customer care and finance teams.' },
+]
+
+const fallbackOfferings: SortableContent[] = [
+  { id: 'starter', title: 'Starter', speed: '20 Mbps', description: 'A dependable package for browsing, messaging and light streaming.' },
+  { id: 'family', title: 'Family', speed: '50 Mbps', description: 'Balanced performance for households with multiple connected devices.' },
+  { id: 'business', title: 'Business', speed: '100 Mbps', description: 'More headroom for video calls, uploads and always-on work.' },
+]
 
 function StatusPill({ status }: { status: string }) {
   return <span className={`pill ${status.replace('_', '-')}`}>{status.replace('_', ' ')}</span>
@@ -66,6 +96,20 @@ async function selectTable<T>(table: string, orderColumn?: string) {
   return (data ?? []) as T[]
 }
 
+function PageSkeleton() {
+  return (
+    <main className="loading-screen" aria-label="Preparing your Star Fibre experience">
+      <div className="loading-shell">
+        <div className="skeleton-brand"><div className="skeleton-logo" /><span /></div>
+        <div className="skeleton-line hero-line" />
+        <div className="skeleton-line" />
+        <div className="skeleton-line short" />
+        <div className="skeleton-grid"><span /><span /><span /></div>
+      </div>
+    </main>
+  )
+}
+
 export default function StarFibreApp() {
   const [data, setData] = useState<DatabaseState>(emptyState)
   const [loading, setLoading] = useState(true)
@@ -93,7 +137,7 @@ export default function StarFibreApp() {
 
         setData({ company: companyRows[0] ?? null, benefits, values, offerings, testimonials, contacts, plans, customers, invoices, payments, settings: settingsRows[0] ?? null, tickets })
       } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : 'Unable to load Supabase data.')
+        setError(loadError instanceof Error ? loadError.message : 'Unable to load account information.')
       } finally {
         setLoading(false)
       }
@@ -102,6 +146,10 @@ export default function StarFibreApp() {
     loadData()
   }, [])
 
+  const company = data.company ?? fallbackCompany
+  const benefits = data.benefits.length ? data.benefits : fallbackBenefits
+  const values = data.values.length ? data.values : fallbackValues
+  const offerings = data.offerings.length ? data.offerings : fallbackOfferings
   const selectedCustomer = data.customers[0]
   const selectedPlan = data.plans.find((plan) => plan.id === selectedCustomer?.plan_id)
   const customerInvoices = useMemo(() => data.invoices.filter((invoice) => invoice.customer_id === selectedCustomer?.id), [data.invoices, selectedCustomer?.id])
@@ -110,71 +158,66 @@ export default function StarFibreApp() {
   const arrears = customerInvoices.filter((invoice) => invoice.status !== 'paid').length
   const collectedThisMonth = data.payments.filter((payment) => payment.verification_status === 'approved').reduce((sum, payment) => sum + Number(payment.amount), 0)
   const totalOutstanding = data.invoices.reduce((sum, invoice) => sum + Number(invoice.amount) - Number(invoice.paid_amount), 0)
+  const unpaidInvoice = latestUnpaidInvoice(customerInvoices)
 
-  if (loading) return <main className="loading-screen"><div className="card"><h1>Loading Star Fibre data from Supabase…</h1><p>The site content, offerings, customers, invoices and payments are being loaded from the database.</p></div></main>
+  if (loading) return <PageSkeleton />
 
   return (
     <>
       <header id="home" className="site-header">
-        <nav className="nav">
-          <div className="brand"><Image src="/star-logo.svg" alt="Star Fibre logo" width={48} height={48} priority /><strong>Star Fibre</strong></div>
-          <a href="#home">Home</a><a href="#about">About</a><a href="#offerings">Offerings</a><a href="#contact">Contact</a><a href="#customer" className="nav-button">Customer Login</a><a href="#admin" className="nav-button admin-button">Admin</a>
+        <nav className="nav" aria-label="Primary navigation">
+          <a className="brand" href="#home"><Image src="/star-logo.svg" alt="Star Fibre logo" width={48} height={48} priority /><strong>Star Fibre</strong></a>
+          <div className="nav-links"><a href="#about">About</a><a href="#offerings">Plans</a><a href="#contact">Contact</a><a href="#customer" className="nav-button">Customer portal</a></div>
         </nav>
-        {error && <div className="error-banner">Supabase error: {error}. Run `supabase/schema.sql` in your Supabase SQL editor and confirm RLS policies.</div>}
+        {error && <div className="error-banner">Some live information could not be refreshed. Showing the available experience while we reconnect.</div>}
         <section className="hero">
           <div>
-            <p>{data.company?.company_name} · {data.company?.tagline}</p>
-            <h1>{data.company?.hero_title ?? 'Star Fibre'}</h1>
-            <p>{data.company?.hero_summary ?? 'No company profile found in Supabase yet.'}</p>
-            <div className="hero-actions"><a href="#contact" className="button-link">Contact Us</a><a href="#customer" className="button-link secondary-link">Customer Login</a></div>
+            <p className="eyebrow">{company.company_name} · {company.tagline}</p>
+            <h1>{company.hero_title}</h1>
+            <p>{company.hero_summary}</p>
+            <div className="hero-actions"><a href="#contact" className="button-link">Get connected</a><a href="#offerings" className="button-link secondary-link">Compare plans</a></div>
           </div>
-          <div className="hero-mark" aria-hidden="true">⌁</div>
+          <div className="hero-panel" aria-label="Service promise"><strong>99%</strong><span>Designed for uptime, clear billing and quick support.</span></div>
         </section>
       </header>
 
       <main>
         <section id="about" className="content-section">
-          <div className="section-head"><p>Who is Starfibre</p><h2>{data.company?.about_title ?? 'About Star Fibre'}</h2></div>
+          <div className="section-head"><p>Why customers choose us</p><h2>{company.about_title}</h2></div>
           <div className="about-grid">
-            <article className="card story-card"><h3>About the company</h3><p>{data.company?.about_body ?? 'Add company_profile rows in Supabase to populate this section.'}</p></article>
-            <article className="card story-card"><h3>Mission and vision</h3><p>{data.company?.vision}</p><p>{data.company?.mission}</p></article>
+            <article className="card story-card"><h3>About Star Fibre</h3><p>{company.about_body}</p></article>
+            <article className="card story-card accent-card"><h3>Mission and vision</h3><p>{company.vision}</p><p>{company.mission}</p></article>
           </div>
-          <div className="grid three numbered-grid">{data.benefits.map((benefit, index) => <article className="card" key={benefit.id}><span className="number">0{index + 1}</span><h3>{benefit.title}</h3><p>{benefit.body}</p></article>)}</div>
-          <div className="section-head compact-head"><p>What sets us apart</p><h2>Stable infrastructure, fair packages and quick activation.</h2></div>
-          <div className="grid three">{data.values.map((value) => <article className="card" key={value.id}><h3>{value.title}</h3><p>{value.body}</p></article>)}</div>
+          <div className="grid three numbered-grid">{benefits.slice(0, 3).map((benefit, index) => <article className="card" key={benefit.id}><span className="number">0{index + 1}</span><h3>{benefit.title}</h3><p>{benefit.body}</p></article>)}</div>
+          <div className="section-head compact-head"><p>Simple by design</p><h2>Helpful information first, fewer distractions on every page.</h2></div>
+          <div className="grid three">{values.slice(0, 3).map((value) => <article className="card" key={value.id}><h3>{value.title}</h3><p>{value.body}</p></article>)}</div>
         </section>
 
         <section id="offerings" className="content-section soft-section">
-          <div className="section-head"><p>Offerings / Services</p><h2>Internet speed packages loaded from Supabase.</h2></div>
-          <div className="offerings-grid">{data.offerings.map((offering) => <article className="card offering-card" key={offering.id}><span>{offering.title}</span><h3>{offering.speed}</h3><p>{offering.description}</p><a href="#contact">Enquire about this plan</a></article>)}</div>
+          <div className="section-head"><p>Internet packages</p><h2>Choose the speed that matches your home or business.</h2></div>
+          <div className="offerings-grid">{offerings.slice(0, 3).map((offering) => <article className="card offering-card" key={offering.id}><span>{offering.title}</span><h3>{offering.speed}</h3><p>{offering.description}</p><a href="#contact">Enquire about this plan</a></article>)}</div>
         </section>
 
-        <section className="content-section testimonials">
-          <div className="section-head"><p>Testimonials</p><h2>Hear what satisfied customers say about Star Fibre.</h2></div>
-          <div className="grid two">{data.testimonials.map((testimonial) => <blockquote className="card" key={testimonial.id}>“{testimonial.quote}”<cite>{testimonial.customer_name}</cite></blockquote>)}</div>
-        </section>
+        {!!data.testimonials.length && <section className="content-section testimonials"><div className="section-head"><p>Customer voices</p><h2>Real feedback from people using Star Fibre.</h2></div><div className="grid two">{data.testimonials.slice(0, 2).map((testimonial) => <blockquote className="card" key={testimonial.id}>“{testimonial.quote}”<cite>{testimonial.customer_name}</cite></blockquote>)}</div></section>}
 
         <section id="contact" className="content-section contact-section">
-          <div className="section-head"><p>Contact</p><h2>We are reachable. Please do contact us.</h2></div>
-          <div className="grid three">{data.contacts.map((contact) => <article className="card" key={contact.id}><h3>{contact.label}</h3><p>{contact.value}</p></article>)}</div>
-          <p className="contact-note">To get connected, subscribe now: call us, email us or send us a WhatsApp message.</p>
+          <div className="section-head"><p>Ready to connect?</p><h2>Talk to a person and get the right package.</h2></div>
+          <div className="grid three">{data.contacts.map((contact) => <article className="card contact-card" key={contact.id}><h3>{contact.label}</h3><p>{contact.value}</p></article>)}</div>
+          <p className="contact-note">Call, email or WhatsApp us to check availability, choose a plan and arrange installation.</p>
         </section>
 
         <section id="customer" className="portal-section">
-          <div className="section-head"><p>Customer Portal</p><h2>Customers can log in and see exactly which months are paid.</h2></div>
-          <div className="auth-card">🔐 <strong>Customer Login:</strong> Email/password or phone OTP through Supabase Auth.</div>
-          {selectedCustomer ? <><div className="grid four"><article className="card stat"><span>Current balance</span><strong>{money(balance)}</strong><small>{arrears} months in arrears</small></article><article className="card stat"><span>Next due date</span><strong>{customerInvoices.find((invoice) => invoice.status !== 'paid')?.due_date ?? 'Current'}</strong><small>Oldest unpaid invoices are settled first.</small></article><article className="card stat"><span>Current plan</span><strong>{selectedPlan?.speed ?? 'No plan'}</strong><small>{selectedPlan?.name} · {money(Number(selectedPlan?.monthly_price ?? 0))}/month</small></article><article className="card stat"><span>Account</span><strong>{selectedCustomer.account_number}</strong><small>{selectedCustomer.street}, Protea Glen {selectedCustomer.extension}</small></article></div><div className="split"><article className="card"><h3>Full billing history / statement</h3><table><thead><tr><th>Month</th><th>Due</th><th>Amount</th><th>Paid date</th><th>Status</th></tr></thead><tbody>{customerInvoices.map((invoice) => <tr key={invoice.id}><td>{invoice.billing_month}</td><td>{invoice.due_date}</td><td>{money(Number(invoice.amount))}</td><td>{invoice.paid_date ?? '—'}</td><td><StatusPill status={invoice.status} /></td></tr>)}</tbody></table><button className="ghost">⬇️ Download PDF statement</button></article><article className="card actions"><h3>Pay and upload proof</h3><label>Payment amount<input type="number" defaultValue={500} /></label><button>💳 Pay now with Paystack</button><button className="secondary">📤 Upload EFT proof</button><p className="note">Allocation preview: a R500 payment is applied from the oldest unpaid invoice forward.</p><ul>{paymentPreview.map((invoice) => <li key={invoice.id}>{invoice.billing_month}: {money(Number(invoice.paid_amount))} / {money(Number(invoice.amount))} · {invoice.status}</li>)}</ul><button className="ghost">🎧 Log billing dispute</button></article></div></> : <div className="card"><p>No customer rows found. Add customers, plans, invoices and payments in Supabase.</p></div>}
+          <div className="section-head"><p>Customer portal preview</p><h2>Account actions are grouped so customers are not overwhelmed.</h2></div>
+          {selectedCustomer ? <><div className="grid four"><article className="card stat primary-stat"><span>Current balance</span><strong>{money(balance)}</strong><small>{arrears ? `${arrears} unpaid month${arrears > 1 ? 's' : ''}` : 'Account is current'}</small></article><article className="card stat"><span>Next action</span><strong>{unpaidInvoice?.due_date ?? 'All paid'}</strong><small>{unpaidInvoice ? 'Oldest unpaid month is prioritised.' : 'No payment required today.'}</small></article><article className="card stat"><span>Current plan</span><strong>{selectedPlan?.speed ?? 'No plan'}</strong><small>{selectedPlan?.name} · {money(Number(selectedPlan?.monthly_price ?? 0))}/month</small></article><article className="card stat"><span>Account</span><strong>{selectedCustomer.account_number}</strong><small>{selectedCustomer.street}, Protea Glen {selectedCustomer.extension}</small></article></div><div className="split"><article className="card"><h3>Billing history</h3><div className="table-wrap"><table><thead><tr><th>Month</th><th>Due</th><th>Amount</th><th>Paid date</th><th>Status</th></tr></thead><tbody>{customerInvoices.map((invoice) => <tr key={invoice.id}><td>{invoice.billing_month}</td><td>{invoice.due_date}</td><td>{money(Number(invoice.amount))}</td><td>{invoice.paid_date ?? '—'}</td><td><StatusPill status={invoice.status} /></td></tr>)}</tbody></table></div><button className="ghost">Download statement</button></article><article className="card actions"><h3>Pay or upload proof</h3><label>Payment amount<input type="number" defaultValue={500} /></label><button>Pay now</button><button className="secondary">Upload EFT proof</button><p className="note">Payments are allocated from the oldest unpaid invoice first.</p><ul>{paymentPreview.slice(0, 3).map((invoice) => <li key={invoice.id}>{invoice.billing_month}: {money(Number(invoice.paid_amount))} / {money(Number(invoice.amount))} · {invoice.status.replace('_', ' ')}</li>)}</ul></article></div></> : <div className="card empty-card"><h3>Customer portal coming online</h3><p>Once an account is selected, customers will see balances, statements and payment actions here.</p></div>}
         </section>
 
         <section id="admin" className="portal-section admin-portal">
-          <div className="section-head"><p>Admin Dashboard</p><h2>Managers can review revenue, arrears and disconnection risk.</h2></div>
-          <div className="auth-card admin-login">🛡️ <strong>Admin:</strong> Role-based access for Admin, Finance/Billing Manager and Support Staff.</div>
-          <div className="grid four"><article className="card stat"><span>👥 Active customers</span><strong>{data.customers.filter((item) => item.status === 'active').length}</strong></article><article className="card stat"><span>✅ Collected this month</span><strong>{money(collectedThisMonth)}</strong></article><article className="card stat"><span>⚠️ Outstanding balance</span><strong>{money(totalOutstanding)}</strong></article><article className="card stat"><span>📊 Overdue accounts</span><strong>{data.customers.filter((item) => item.status !== 'active').length}</strong></article></div>
-          <div className="split"><article className="card"><h3>Customer aging and SLA</h3><table><thead><tr><th>Customer</th><th>Account</th><th>Plan</th><th>Status</th><th>SLA</th><th>Balance</th></tr></thead><tbody>{data.customers.map((item, index) => { const ledger = data.invoices.filter((invoice) => invoice.customer_id === item.id); const customerBalance = ledger.reduce((sum, invoice) => sum + Number(invoice.amount) - Number(invoice.paid_amount), 0); const days = [31, 0, 62][index] ?? 0; return <tr key={item.id}><td>{item.name}</td><td>{item.account_number}</td><td>{data.plans.find((entry) => entry.id === item.plan_id)?.speed}</td><td><StatusPill status={item.status} /></td><td><span className={`aging ${agingClass(days, data.settings)}`}>{days ? `${days}d overdue` : 'current'}</span></td><td>{money(customerBalance)}</td></tr> })}</tbody></table><div className="bulk"><button className="secondary">Send bulk reminders</button><button className="danger">Flag for disconnection review</button></div></article><aside className="card"><h3>Pending proof-of-payment queue</h3>{data.payments.filter((payment) => payment.verification_status === 'pending_verification').map((payment) => <div className="queue" key={payment.id}><span>📄</span><div><strong>{data.customers.find((item) => item.id === payment.customer_id)?.name}</strong><p>{money(Number(payment.amount))} paid {payment.paid_at} · approve applies to oldest unpaid month.</p></div><button>Approve</button><button className="ghost">Reject</button></div>)}<h3 id="settings">Settings</h3><p>Editable thresholds: yellow {data.settings?.yellow_days ?? 2}d, orange {data.settings?.orange_days ?? 4}d, red {data.settings?.red_days ?? 5}d, disconnection {data.settings?.disconnection_days ?? 14}d / {data.settings?.disconnection_months ?? 2} months.</p></aside></div>
-          <div className="grid three"><article className="card"><h3>Reports/export</h3><p>CSV/PDF exports for monthly collections, aging, balances and disconnected accounts.</p></article><article className="card"><h3>Audit trail</h3><p>Approvals, rejects, disconnections and reconnections are logged with actor and timestamp.</p></article><article className="card"><h3>Tickets</h3><p>{data.tickets.length} billing queries loaded from Supabase.</p></article></div>
+          <div className="section-head"><p>Manager overview</p><h2>Operational data is condensed into the decisions teams need most.</h2></div>
+          <div className="grid four"><article className="card stat"><span>Active customers</span><strong>{data.customers.filter((item) => item.status === 'active').length}</strong></article><article className="card stat"><span>Collected this month</span><strong>{money(collectedThisMonth)}</strong></article><article className="card stat"><span>Outstanding balance</span><strong>{money(totalOutstanding)}</strong></article><article className="card stat"><span>Open tickets</span><strong>{data.tickets.length}</strong></article></div>
+          <div className="split"><article className="card"><h3>Customer aging</h3><div className="table-wrap"><table><thead><tr><th>Customer</th><th>Plan</th><th>Status</th><th>SLA</th><th>Balance</th></tr></thead><tbody>{data.customers.slice(0, 6).map((item, index) => { const ledger = data.invoices.filter((invoice) => invoice.customer_id === item.id); const customerBalance = ledger.reduce((sum, invoice) => sum + Number(invoice.amount) - Number(invoice.paid_amount), 0); const days = [31, 0, 62][index] ?? 0; return <tr key={item.id}><td>{item.name}</td><td>{data.plans.find((entry) => entry.id === item.plan_id)?.speed}</td><td><StatusPill status={item.status} /></td><td><span className={`aging ${agingClass(days, data.settings)}`}>{days ? `${days}d overdue` : 'current'}</span></td><td>{money(customerBalance)}</td></tr> })}</tbody></table></div><div className="bulk"><button className="secondary">Send reminders</button><button className="danger">Review disconnections</button></div></article><aside className="card"><h3>Proof-of-payment queue</h3>{data.payments.filter((payment) => payment.verification_status === 'pending_verification').slice(0, 3).map((payment) => <div className="queue" key={payment.id}><div><strong>{data.customers.find((item) => item.id === payment.customer_id)?.name}</strong><p>{money(Number(payment.amount))} paid {payment.paid_at}</p></div><button>Approve</button><button className="ghost">Reject</button></div>)}<h3 id="settings">Thresholds</h3><p>Yellow {data.settings?.yellow_days ?? 2}d, orange {data.settings?.orange_days ?? 4}d, red {data.settings?.red_days ?? 5}d, disconnection {data.settings?.disconnection_days ?? 14}d.</p></aside></div>
         </section>
       </main>
-      <footer>{data.company?.company_name ?? 'Starfibre Communications (Pty) Ltd'} · © 2026</footer>
+      <footer>{company.company_name} · © 2026</footer>
     </>
   )
 }
