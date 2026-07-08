@@ -136,3 +136,107 @@ footer { background: #071c38; color: #cfe2ff; padding: 32px; text-align: center;
   .queue { grid-template-columns: 1fr; }
   .skeleton-grid { grid-template-columns: 1fr; }
 }
+
+.brand img {
+  background: #13224a;
+  border-radius: 14px;
+  box-shadow: 0 12px 32px #001b4a55, 0 0 0 1px #ffffff25 inset;
+  padding: 3px;
+}
+
+.about-page {
+  background: linear-gradient(180deg, #ffffff, #f7fbff);
+  border: 1px solid #e1ecfb;
+  border-radius: 36px;
+  box-shadow: 0 30px 90px #0637730d;
+  padding: 42px;
+}
+
+.connect-banner {
+  align-items: center;
+  background: linear-gradient(135deg, #061b42, #0b66d8 65%, #18c4ff);
+  border-radius: 28px;
+  box-shadow: 0 26px 70px #06408e2e;
+  color: white;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+  margin-bottom: 18px;
+  padding: 22px 24px;
+}
+
+.connect-banner strong {
+  font-size: clamp(24px, 3vw, 38px);
+  letter-spacing: -.035em;
+  white-space: nowrap;
+}
+
+.connect-banner span {
+  color: #e4f6ff;
+  font-weight: 800;
+  line-height: 1.5;
+  max-width: 720px;
+}
+
+.admin-gate {
+  background: radial-gradient(circle at top right, #d8f5ff, transparent 34%), #ffffff;
+  max-width: 900px;
+}
+
+.login-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 18px 0;
+}
+
+.login-grid label {
+  color: #526982;
+  font-weight: 900;
+}
+
+.login-grid input {
+  border: 1px solid #cbd8ea;
+  border-radius: 14px;
+  display: block;
+  margin-top: 8px;
+  padding: 14px;
+  width: 100%;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  filter: grayscale(.6);
+  opacity: .55;
+}
+
+@media (max-width: 720px) {
+  .about-page { padding: 24px; }
+  .connect-banner, .login-grid { grid-template-columns: 1fr; }
+  .connect-banner { align-items: flex-start; flex-direction: column; }
+  .connect-banner strong { white-space: normal; }
+}
+
+.admin-toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-bottom: 18px;
+}
+
+.admin-toolbar span {
+  color: #526982;
+  font-weight: 900;
+  margin-right: auto;
+}
+
+.auth-error {
+  background: #ffe0e3;
+  border: 1px solid #ffbbc3;
+  border-radius: 14px;
+  color: #8d1020;
+  font-weight: 850;
+  padding: 12px 14px;
+}
