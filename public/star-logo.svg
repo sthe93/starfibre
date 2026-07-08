@@ -1,1 +1,24 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 160"><rect width="200" height="160" rx="18" fill="#142348"/><path d="M67 108 82 70 49 45l40 1 13-38 13 38 40-1-33 25 15 38-35-23z" fill="none" stroke="#22c7ff" stroke-width="9"/><path d="M125 42c20 8 33 23 39 43M116 58c13 5 21 14 25 29" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round"/><text x="24" y="137" font-size="32" fill="#fff" font-family="Arial" letter-spacing="3">STAR</text><text x="55" y="151" font-size="8" fill="#fff" font-family="Arial" letter-spacing="2">FIBRE COMMUNICATIONS</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 160" role="img" aria-labelledby="title desc">
+  <title id="title">Star Fibre Communications logo</title>
+  <desc id="desc">A neon blue star, white wireless signal and Star Fibre Communications wordmark on a deep navy background.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#13234e"/>
+      <stop offset="1" stop-color="#0a1432"/>
+    </linearGradient>
+    <linearGradient id="star" x1="35" x2="150" y1="16" y2="112">
+      <stop offset="0" stop-color="#1cf0ff"/>
+      <stop offset=".55" stop-color="#1aa7ff"/>
+      <stop offset="1" stop-color="#f04cff"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="3.6" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="200" height="160" rx="18" fill="url(#bg)"/>
+  <path d="M68 107 82 70 50 46l39 1 13-37 13 37 39-1-32 24 14 37-34-22z" fill="#15295b" stroke="url(#star)" stroke-width="8" stroke-linejoin="round" filter="url(#glow)"/>
+  <path d="M126 42c21 8 35 24 40 45M117 58c13 5 22 15 26 30" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" opacity=".96"/>
+  <text x="23" y="136" fill="#fff" font-family="Arial, Helvetica, sans-serif" font-size="33" letter-spacing="3.5">STAR</text>
+  <text x="55" y="151" fill="#fff" font-family="Arial, Helvetica, sans-serif" font-size="8" letter-spacing="2.1">FIBRE COMMUNICATIONS</text>
+</svg>
