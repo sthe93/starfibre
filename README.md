@@ -40,7 +40,7 @@ This repository includes a GitHub Actions workflow at `.github/workflows/deploy-
 
 ## Deployment notes
 
-- The workflow uses Node.js 24 and `npm install`, so it works before a `package-lock.json` has been committed. After the first successful local install, you can commit a lockfile and switch the workflow to `npm ci` if desired.
+- The workflow uses Node.js 24 and `npm install` without setup-node package-manager caching, so it works before a `package-lock.json` has been committed. After the first successful dependency install, commit a lockfile and then switch the workflow to `npm ci` with setup-node cache enabled if desired.
 - API-backed dashboard deployments should not use `output: 'export'` because Next.js static export cannot run API routes.
 - If you intentionally build a marketing-only static export, set `STATIC_EXPORT=true`; image optimization and custom headers are disabled for that mode because static hosting cannot run the optimizer or custom route handlers.
 - If deploying to a custom domain or user/organization root page, unset `GITHUB_PAGES` or adjust `basePath` in `next.config.mjs`.
