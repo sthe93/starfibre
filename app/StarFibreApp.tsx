@@ -153,8 +153,8 @@ export default function StarFibreApp() {
     <>
       <header id="home" className="site-header">
         <nav className="nav" aria-label="Primary navigation">
-          <a className="brand" href="#home"><Image src="/star-logo.svg" alt="Star Fibre logo" width={48} height={48} priority /><strong>Star Fibre</strong></a>
-          <div className="nav-links"><a href="#about">About</a><a href="#offerings">Plans</a><a href="#contact">Contact</a><a href="#customer" className="nav-button">Customer portal</a></div>
+          <a className="brand" href="#home"><Image src="/star-logo.svg" alt="Star Fibre logo" width={56} height={56} priority /><strong>Star Fibre</strong></a>
+          <div className="nav-links"><a href="#about-us">About us</a><a href="#offerings">Plans</a><a href="#contact">Contact</a><a href="#customer" className="nav-button">Customer portal</a></div>
         </nav>
         {error && <div className="error-banner">Some live information could not be refreshed. Showing the available experience while we reconnect.</div>}
         <section className="hero">
@@ -162,15 +162,15 @@ export default function StarFibreApp() {
             <p className="eyebrow">{company.company_name} · {company.tagline}</p>
             <h1>{company.hero_title}</h1>
             <p>{company.hero_summary}</p>
-            <div className="hero-actions"><a href="#contact" className="button-link">Get connected</a><a href="#offerings" className="button-link secondary-link">Compare plans</a></div>
+            <div className="hero-actions"><a href="#offerings" className="button-link">Compare premium fibre plans</a><a href="#about-us" className="button-link secondary-link">About Star Fibre</a></div>
           </div>
           <div className="hero-panel" aria-label="Service promise"><strong>99%</strong><span>Designed for uptime, clear billing and quick support.</span></div>
         </section>
       </header>
 
       <main>
-        <section id="about" className="content-section">
-          <div className="section-head"><p>Why customers choose us</p><h2>{company.about_title}</h2></div>
+        <section id="about-us" className="content-section about-page">
+          <div className="section-head"><p>About us</p><h2>About Star Fibre: {company.about_title}</h2></div>
           <div className="about-grid">
             <article className="card story-card"><h3>About Star Fibre</h3><p>{company.about_body}</p></article>
             <article className="card story-card accent-card"><h3>Mission and vision</h3><p>{company.vision}</p><p>{company.mission}</p></article>
@@ -188,7 +188,7 @@ export default function StarFibreApp() {
         {!!data.testimonials.length && <section className="content-section testimonials"><div className="section-head"><p>Customer voices</p><h2>Real feedback from people using Star Fibre.</h2></div><div className="grid two">{data.testimonials.slice(0, 2).map((testimonial) => <blockquote className="card" key={testimonial.id}>“{testimonial.quote}”<cite>{testimonial.customer_name}</cite></blockquote>)}</div></section>}
 
         <section id="contact" className="content-section contact-section">
-          <div className="section-head"><p>Ready to connect?</p><h2>Talk to a person and get the right package.</h2></div>
+          <div className="section-head"><p>Ready to connect?</p><h2>Talk to a person and get the right package.</h2></div><div className="connect-banner"><strong>Ready to connect?</strong><span>Availability checks, installation scheduling and proof-of-payment support live on this contact page only.</span></div>
           <div className="grid three">{data.contacts.map((contact) => <article className="card contact-card" key={contact.id}><h3>{contact.label}</h3><p>{contact.value}</p></article>)}</div>
           <p className="contact-note">Call, email or WhatsApp us to check availability, choose a plan and arrange installation.</p>
         </section>
