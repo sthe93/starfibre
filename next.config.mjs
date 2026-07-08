@@ -4,7 +4,7 @@ const basePath = isGithubPages && repositoryName ? `/${repositoryName}` : ''
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'export',
+  ...(isGithubPages ? { output: 'export' } : {}),
   trailingSlash: true,
   images: {
     unoptimized: true,

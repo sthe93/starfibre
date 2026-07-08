@@ -247,3 +247,68 @@ on conflict do nothing;
 insert into settings (id, notification_template) values
 (1, 'Your Star Fibre account has an overdue balance. Payments are allocated to your oldest unpaid invoice first.')
 on conflict (id) do nothing;
+
+-- Launch hardening: least-privilege roles and strict RLS for operational data.
+create table if not exists admin_memberships (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  role text not null check (role in ('admin','manager','finance','support')),
+  created_at timestamptz default now()
+);
+
+alter table admin_memberships enable row level security;
+
+create or replace function is_admin_member(required_roles text[] default array['admin','manager'])
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from admin_memberships
+    where user_id = auth.uid()
+      and role = any(required_roles)
+  );
+$$;
+
+create or replace function owns_customer_record(customer_record_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from customers
+    where id = customer_record_id
+      and auth_user_id = auth.uid()
+  );
+$$;
+
+drop policy if exists "Authenticated read customers" on customers;
+drop policy if exists "Authenticated read invoices" on invoices;
+drop policy if exists "Authenticated read payments" on payments;
+drop policy if exists "Authenticated read settings" on settings;
+drop policy if exists "Authenticated read tickets" on tickets;
+drop policy if exists "Authenticated read audit" on audit_trail;
+
+create policy "Customers read own profile" on customers for select to authenticated using (auth_user_id = auth.uid());
+create policy "Managers read customers" on customers for select to authenticated using (is_admin_member(array['admin','manager','support','finance']));
+
+create policy "Customers read own invoices" on invoices for select to authenticated using (owns_customer_record(customer_id));
+create policy "Managers read invoices" on invoices for select to authenticated using (is_admin_member(array['admin','manager','finance','support']));
+
+create policy "Customers read own payments" on payments for select to authenticated using (owns_customer_record(customer_id));
+create policy "Finance reads payments" on payments for select to authenticated using (is_admin_member(array['admin','manager','finance']));
+
+create policy "Managers read settings" on settings for select to authenticated using (is_admin_member(array['admin','manager','finance','support']));
+create policy "Customers read own tickets" on tickets for select to authenticated using (customer_id is not null and owns_customer_record(customer_id));
+create policy "Support reads tickets" on tickets for select to authenticated using (is_admin_member(array['admin','manager','support']));
+create policy "Admins read audit trail" on audit_trail for select to authenticated using (is_admin_member(array['admin','manager']));
+create policy "Admins read memberships" on admin_memberships for select to authenticated using (is_admin_member(array['admin']));
+
+create index if not exists customers_auth_user_id_idx on customers(auth_user_id);
+create index if not exists invoices_customer_billing_idx on invoices(customer_id, billing_month desc);
+create index if not exists payments_customer_paid_at_idx on payments(customer_id, paid_at desc);
+create index if not exists payments_verification_status_idx on payments(verification_status);
+create index if not exists audit_trail_created_at_idx on audit_trail(created_at desc);
