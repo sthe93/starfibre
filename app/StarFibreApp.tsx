@@ -98,6 +98,87 @@ async function fetchDashboardData(page = 1) {
   return response.json() as Promise<DatabaseState>
 }
 
+function AdminManagerOverview({ plans }: { plans: Plan[] }) {
+  const [email, setEmail] = useState('admin@starfibrecom.co.za')
+  const [password, setPassword] = useState('')
+  const [session, setSession] = useState<Session | null>(null)
+  const [overview, setOverview] = useState<AdminOverviewData | null>(null)
+  const [adminError, setAdminError] = useState<string | null>(null)
+  const [adminLoading, setAdminLoading] = useState(false)
+
+  async function loadAdminOverview(activeSession: Session) {
+    setAdminLoading(true)
+    setAdminError(null)
+    try {
+      const response = await fetch('/api/admin/overview', {
+        headers: { Authorization: `Bearer ${activeSession.access_token}` },
+      })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error ?? 'Unable to load admin overview.')
+      setOverview(payload as AdminOverviewData)
+    } catch (error) {
+      setOverview(null)
+      setAdminError(error instanceof Error ? error.message : 'Unable to load admin overview.')
+    } finally {
+      setAdminLoading(false)
+    }
+  }
+
+  async function signInAdmin() {
+    setAdminLoading(true)
+    setAdminError(null)
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error || !data.session) {
+      setAdminLoading(false)
+      setAdminError(error?.message ?? 'Unable to sign in.')
+      return
+    }
+    setSession(data.session)
+    await loadAdminOverview(data.session)
+  }
+
+  async function signOutAdmin() {
+    await supabase.auth.signOut()
+    setSession(null)
+    setOverview(null)
+    setPassword('')
+  }
+
+  const customers = overview?.customers ?? []
+  const invoices = overview?.invoices ?? []
+  const payments = overview?.payments ?? []
+  const settings = overview?.settings ?? null
+  const tickets = overview?.tickets ?? []
+  const collectedThisMonth = payments.filter((payment) => payment.verification_status === 'approved').reduce((sum, payment) => sum + Number(payment.amount), 0)
+  const totalOutstanding = invoices.reduce((sum, invoice) => sum + Number(invoice.amount) - Number(invoice.paid_amount), 0)
+
+  return (
+    <section id="admin" className="portal-section admin-portal">
+      <div className="section-head"><p>Admin only</p><h2>Manager overview is loaded through Supabase Auth and server-side role checks.</h2></div>
+      {!session || !overview ? (
+        <article className="card admin-gate">
+          <h3>Administrator sign in</h3>
+          <p>Sign in with a Supabase Auth admin user. The server validates the session and the <code>user_profiles.role</code> value before returning operational data.</p>
+          <div className="login-grid">
+            <label>Email<input value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+            <label>Password<input type="password" placeholder="StarAdmin#2026" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+          </div>
+          <button onClick={signInAdmin} disabled={adminLoading || !email || !password}>{adminLoading ? 'Checking access…' : 'Sign in and load manager overview'}</button>
+          {adminError && <p className="auth-error">{adminError}</p>}
+          <p className="note">Seeded admin: admin@starfibrecom.co.za · seeded customer: customer@starfibrecom.co.za. Customer accounts receive a 403 if they request the admin API.</p>
+        </article>
+      ) : (
+        <>
+          <div className="admin-toolbar"><span>Signed in as {session.user.email}</span><button className="ghost" onClick={() => loadAdminOverview(session)} disabled={adminLoading}>Refresh</button><button className="secondary" onClick={signOutAdmin}>Sign out</button></div>
+          {adminError && <p className="auth-error">{adminError}</p>}
+          <div className="grid four"><article className="card stat"><span>Active customers</span><strong>{customers.filter((item) => item.status === 'active').length}</strong></article><article className="card stat"><span>Collected this month</span><strong>{money(collectedThisMonth)}</strong></article><article className="card stat"><span>Outstanding balance</span><strong>{money(totalOutstanding)}</strong></article><article className="card stat"><span>Open tickets</span><strong>{tickets.length}</strong></article></div>
+          <div className="split"><article className="card"><h3>Customer aging</h3><div className="table-wrap"><table><thead><tr><th>Customer</th><th>Plan</th><th>Status</th><th>SLA</th><th>Balance</th></tr></thead><tbody>{customers.slice(0, 6).map((item, index) => { const ledger = invoices.filter((invoice) => invoice.customer_id === item.id); const customerBalance = ledger.reduce((sum, invoice) => sum + Number(invoice.amount) - Number(invoice.paid_amount), 0); const days = [31, 0, 62][index] ?? 0; return <tr key={item.id}><td>{item.name}</td><td>{plans.find((entry) => entry.id === item.plan_id)?.speed}</td><td><StatusPill status={item.status} /></td><td><span className={`aging ${agingClass(days, settings)}`}>{days ? `${days}d overdue` : 'current'}</span></td><td>{money(customerBalance)}</td></tr> })}</tbody></table></div><div className="bulk"><button className="secondary">Send reminders</button><button className="danger">Review disconnections</button></div></article><aside className="card"><h3>Proof-of-payment queue</h3>{payments.filter((payment) => payment.verification_status === 'pending_verification').slice(0, 3).map((payment) => <div className="queue" key={payment.id}><div><strong>{customers.find((item) => item.id === payment.customer_id)?.name}</strong><p>{money(Number(payment.amount))} paid {payment.paid_at}</p></div><button>Approve</button><button className="ghost">Reject</button></div>)}<h3 id="settings">Thresholds</h3><p>Yellow {settings?.yellow_days ?? 2}d, orange {settings?.orange_days ?? 4}d, red {settings?.red_days ?? 5}d, disconnection {settings?.disconnection_days ?? 14}d.</p></aside></div>
+        </>
+      )}
+    </section>
+  )
+}
+
 function PageSkeleton() {
   return (
     <main className="loading-screen" aria-label="Preparing your Star Fibre experience">
@@ -153,8 +234,8 @@ export default function StarFibreApp() {
     <>
       <header id="home" className="site-header">
         <nav className="nav" aria-label="Primary navigation">
-          <a className="brand" href="#home"><Image src="/star-logo.svg" alt="Star Fibre logo" width={48} height={48} priority /><strong>Star Fibre</strong></a>
-          <div className="nav-links"><a href="#about">About</a><a href="#offerings">Plans</a><a href="#contact">Contact</a><a href="#customer" className="nav-button">Customer portal</a></div>
+          <a className="brand" href="#home"><Image src="/star-logo.svg" alt="Star Fibre logo" width={56} height={56} priority /><strong>Star Fibre</strong></a>
+          <div className="nav-links"><a href="#about-us">About us</a><a href="#offerings">Plans</a><a href="#contact">Contact</a><a href="#customer" className="nav-button">Customer portal</a></div>
         </nav>
         {error && <div className="error-banner">Some live information could not be refreshed. Showing the available experience while we reconnect.</div>}
         <section className="hero">
@@ -162,15 +243,15 @@ export default function StarFibreApp() {
             <p className="eyebrow">{company.company_name} · {company.tagline}</p>
             <h1>{company.hero_title}</h1>
             <p>{company.hero_summary}</p>
-            <div className="hero-actions"><a href="#contact" className="button-link">Get connected</a><a href="#offerings" className="button-link secondary-link">Compare plans</a></div>
+            <div className="hero-actions"><a href="#offerings" className="button-link">Compare premium fibre plans</a><a href="#about-us" className="button-link secondary-link">About Star Fibre</a></div>
           </div>
           <div className="hero-panel" aria-label="Service promise"><strong>99%</strong><span>Designed for uptime, clear billing and quick support.</span></div>
         </section>
       </header>
 
       <main>
-        <section id="about" className="content-section">
-          <div className="section-head"><p>Why customers choose us</p><h2>{company.about_title}</h2></div>
+        <section id="about-us" className="content-section about-page">
+          <div className="section-head"><p>About us</p><h2>About Star Fibre: {company.about_title}</h2></div>
           <div className="about-grid">
             <article className="card story-card"><h3>About Star Fibre</h3><p>{company.about_body}</p></article>
             <article className="card story-card accent-card"><h3>Mission and vision</h3><p>{company.vision}</p><p>{company.mission}</p></article>
@@ -188,7 +269,7 @@ export default function StarFibreApp() {
         {!!data.testimonials.length && <section className="content-section testimonials"><div className="section-head"><p>Customer voices</p><h2>Real feedback from people using Star Fibre.</h2></div><div className="grid two">{data.testimonials.slice(0, 2).map((testimonial) => <blockquote className="card" key={testimonial.id}>“{testimonial.quote}”<cite>{testimonial.customer_name}</cite></blockquote>)}</div></section>}
 
         <section id="contact" className="content-section contact-section">
-          <div className="section-head"><p>Ready to connect?</p><h2>Talk to a person and get the right package.</h2></div>
+          <div className="section-head"><p>Ready to connect?</p><h2>Talk to a person and get the right package.</h2></div><div className="connect-banner"><strong>Ready to connect?</strong><span>Availability checks, installation scheduling and proof-of-payment support live on this contact page only.</span></div>
           <div className="grid three">{data.contacts.map((contact) => <article className="card contact-card" key={contact.id}><h3>{contact.label}</h3><p>{contact.value}</p></article>)}</div>
           <p className="contact-note">Call, email or WhatsApp us to check availability, choose a plan and arrange installation.</p>
         </section>
