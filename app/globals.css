@@ -265,3 +265,18 @@ footer {
   .queue { grid-template-columns: 1fr; }
   .card { overflow: auto; }
 }
+.loading-screen {
+  align-items: center;
+  display: grid;
+  min-height: 100vh;
+  padding: 6vw;
+}
+.error-banner {
+  background: #fff3bf;
+  border: 1px solid #f5d35f;
+  border-radius: 14px;
+  color: #6b4f00;
+  font-weight: 800;
+  margin-top: 18px;
+  padding: 14px;
+}

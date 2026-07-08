@@ -11,6 +11,16 @@ npm run dev
 
 Open <http://localhost:3000>.
 
+
+## Supabase setup
+
+The app now loads public site content, offerings, contacts, customers, invoices, payments, settings and tickets from Supabase instead of hardcoded page arrays. Run `supabase/schema.sql` in the Supabase SQL editor before deploying so the required tables, public-content policies and seed rows exist.
+
+Default public client values are configured in `lib/supabase.ts` for the supplied project URL and publishable key. For production, you can override them with GitHub Actions secrets:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
 ## Deploying to GitHub Pages
 
 This repository includes a GitHub Actions workflow at `.github/workflows/deploy-github-pages.yml` that installs dependencies, builds the app as a static Next.js export, and deploys the generated `out/` folder to GitHub Pages.
